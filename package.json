@@ -1,5 +1,5 @@
 {
-  "name": "forward-rpc",
+  "name": "@cvs0/forward-rpc",
   "version": "0.1.0",
   "description": "Declarative, schema-driven HTTP API integration framework with type-safe clients.",
   "sideEffects": false,
