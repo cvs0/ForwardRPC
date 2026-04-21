@@ -7,7 +7,7 @@ ForwardRPC lets you define each endpoint once and get runtime validation, typed 
 ## Install
 
 ```bash
-npm install forward-rpc
+npm install @cvs0/forward-rpc
 ```
 
 Optional Zod adapter:
@@ -20,7 +20,7 @@ npm install zod
 
 ```ts
 import { z } from "zod";
-import { createBridge, createClient, defineRoute, fromZod, routeName } from "forward-rpc";
+import { createBridge, createClient, defineRoute, fromZod, routeName } from "@cvs0/forward-rpc";
 
 const getBuild = defineRoute({
   name: routeName("getBuild"),
