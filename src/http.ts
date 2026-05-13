@@ -52,7 +52,9 @@ export class FetchHttpClient implements HttpClient {
         body:
           request.body === undefined || request.body === null
             ? null
-            : JSON.stringify(request.body),
+            : request.body instanceof URLSearchParams
+              ? request.body.toString()
+              : JSON.stringify(request.body),
         signal: controller.signal
       };
 
