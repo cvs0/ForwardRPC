@@ -1,4 +1,9 @@
-import { HttpStatusError, NetworkError, TimeoutError } from "./errors";
+import {
+  formatResponseBodySnippet,
+  HttpStatusError,
+  NetworkError,
+  TimeoutError
+} from "./errors";
 import type { Dictionary } from "./types";
 
 export type HttpRequest = {
@@ -68,11 +73,17 @@ export class FetchHttpClient implements HttpClient {
         : await response.text();
 
       if (!response.ok) {
-        throw new HttpStatusError(`HTTP request failed with ${response.status}`, {
+        const snippet = formatResponseBodySnippet(data);
+        const message = snippet
+          ? `HTTP request failed with ${response.status}: ${snippet}`
+          : `HTTP request failed with ${response.status}`;
+
+        throw new HttpStatusError(message, {
           routeName: "unknown" as never,
           statusCode: response.status,
           method: request.method,
-          path: request.url
+          path: request.url,
+          responseBody: data
         });
       }
 

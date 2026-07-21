@@ -8,6 +8,40 @@ export type ErrorContext = {
   attempt?: number;
   timeoutMs?: number;
   cause?: unknown;
+  /** Upstream response body for non-OK HTTP responses (JSON or text). */
+  responseBody?: unknown;
+};
+
+const RESPONSE_BODY_SNIPPET_MAX = 200;
+
+/** Format a short, log-safe snippet of an HTTP error response body. */
+export const formatResponseBodySnippet = (
+  body: unknown,
+  maxLength = RESPONSE_BODY_SNIPPET_MAX
+): string => {
+  if (body === undefined || body === null) {
+    return "";
+  }
+
+  const text =
+    typeof body === "string"
+      ? body
+      : (() => {
+          try {
+            return JSON.stringify(body);
+          } catch {
+            return String(body);
+          }
+        })();
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.length > maxLength
+    ? `${trimmed.slice(0, maxLength)}…`
+    : trimmed;
 };
 
 export class ForwardRpcError extends Error {
