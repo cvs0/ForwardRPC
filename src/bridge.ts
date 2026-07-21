@@ -290,12 +290,23 @@ export class ForwardBridge<TRoutes extends RoutesMap> {
         }
       }
 
-      this.logger.error?.("forwardrpc.call.failure", {
+      const failureLog: Record<string, unknown> = {
         route: route.name,
         method: route.method,
         path: route.path,
         error: ensureError(mappedError).message
-      });
+      };
+
+      if (mappedError instanceof ForwardRpcError) {
+        if (mappedError.context.statusCode !== undefined) {
+          failureLog.statusCode = mappedError.context.statusCode;
+        }
+        if (mappedError.context.responseBody !== undefined) {
+          failureLog.responseBody = mappedError.context.responseBody;
+        }
+      }
+
+      this.logger.error?.("forwardrpc.call.failure", failureLog);
 
       return err(mappedError);
     }

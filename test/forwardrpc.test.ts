@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { z } from "zod";
 import {
   createBridge,
   createClient,
   defineRoute,
   err,
+  FetchHttpClient,
   fromZod,
   headerMiddleware,
+  HttpStatusError,
   ok,
   retryMiddleware,
   routeName,
@@ -14,6 +16,10 @@ import {
 } from "../src/index";
 
 describe("ForwardRPC", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("executes route with runtime validation and transformation", async () => {
     const httpClient: HttpClient = {
       async request() {
@@ -239,5 +245,143 @@ describe("ForwardRPC", () => {
   it("allows consumer result helpers", () => {
     expect(ok(1).ok).toBe(true);
     expect(err("bad").ok).toBe(false);
+  });
+
+  it("attaches XML response body to HttpStatusError on non-OK responses", async () => {
+    const upstreamBody =
+      '<?xml version="1.0"?><error>Invalid build type id</error>';
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(upstreamBody, {
+          status: 400,
+          headers: { "content-type": "application/xml" }
+        })
+      )
+    );
+
+    const client = new FetchHttpClient();
+
+    try {
+      await client.request({
+        method: "POST",
+        url: "https://ci.example.com/app/rest/buildQueue",
+        headers: { "Content-Type": "application/xml" },
+        body: "<build/>"
+      });
+      expect.fail("expected HttpStatusError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpStatusError);
+      if (!(error instanceof HttpStatusError)) {
+        return;
+      }
+      expect(error.context.statusCode).toBe(400);
+      expect(error.context.responseBody).toBe(upstreamBody);
+      expect(error.message).toContain("HTTP request failed with 400");
+      expect(error.message).toContain("Invalid build type id");
+    }
+  });
+
+  it("attaches JSON response body to HttpStatusError on non-OK responses", async () => {
+    const upstreamBody = { message: "bad payload", code: "INVALID_BUILD" };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(upstreamBody), {
+          status: 400,
+          headers: { "content-type": "application/json" }
+        })
+      )
+    );
+
+    const client = new FetchHttpClient();
+
+    try {
+      await client.request({
+        method: "POST",
+        url: "https://ci.example.com/app/rest/buildQueue",
+        headers: { "Content-Type": "application/json" },
+        body: { buildTypeId: "missing" }
+      });
+      expect.fail("expected HttpStatusError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpStatusError);
+      if (!(error instanceof HttpStatusError)) {
+        return;
+      }
+      expect(error.context.statusCode).toBe(400);
+      expect(error.context.responseBody).toEqual(upstreamBody);
+      expect(error.message).toContain("INVALID_BUILD");
+    }
+  });
+
+  it("surfaces responseBody through bridge call and failure logs", async () => {
+    const upstreamBody =
+      '<?xml version="1.0"?><error>Invalid build type id</error>';
+    const errorLogs: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(upstreamBody, {
+          status: 400,
+          headers: { "content-type": "text/plain" }
+        })
+      )
+    );
+
+    const route = defineRoute({
+      name: routeName("queueBuild"),
+      method: "POST",
+      path: "/app/rest/buildQueue",
+      responseSchema: fromZod(z.object({ id: z.string() })),
+      transform: ({ response }) => response.id
+    });
+
+    const bridge = createBridge({
+      name: "teamcity",
+      baseUrl: "https://ci.example.com",
+      routes: { queueBuild: route },
+      httpClient: new FetchHttpClient(),
+      logger: {
+        debug() {},
+        info() {},
+        warn() {},
+        error(message, payload) {
+          if (message === "forwardrpc.call.failure") {
+            errorLogs.push(payload);
+          }
+        }
+      }
+    });
+
+    const client = createClient(bridge);
+    const result = await client.call("queueBuild");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.error).toBeInstanceOf(HttpStatusError);
+    if (!(result.error instanceof HttpStatusError)) {
+      return;
+    }
+
+    expect(result.error.context.responseBody).toBe(upstreamBody);
+    expect(result.error.context.statusCode).toBe(400);
+    expect(result.error.message).toContain("Invalid build type id");
+    expect(errorLogs).toEqual([
+      {
+        route: "queueBuild",
+        method: "POST",
+        path: "/app/rest/buildQueue",
+        error: result.error.message,
+        responseBody: upstreamBody,
+        statusCode: 400
+      }
+    ]);
   });
 });

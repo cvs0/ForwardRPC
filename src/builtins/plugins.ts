@@ -1,3 +1,4 @@
+import { ForwardRpcError } from "../errors";
 import type {
   ForwardRpcPlugin,
   PluginErrorContext,
@@ -55,14 +56,25 @@ export const createLoggingPlugin = (
       });
     },
     onError(ctx) {
+      const errorPayload =
+        ctx.error instanceof Error
+          ? { name: ctx.error.name, message: ctx.error.message }
+          : { name: "UnknownError", message: String(ctx.error) };
+
+      const context =
+        ctx.error instanceof ForwardRpcError ? ctx.error.context : undefined;
+
       logger.error("forwardrpc.plugin.error", {
         route: ctx.route.name,
         method: ctx.request.method,
         durationMs: ctx.durationMs,
-        error:
-          ctx.error instanceof Error
-            ? { name: ctx.error.name, message: ctx.error.message }
-            : { name: "UnknownError", message: String(ctx.error) }
+        error: errorPayload,
+        ...(context?.statusCode === undefined
+          ? {}
+          : { statusCode: context.statusCode }),
+        ...(context?.responseBody === undefined
+          ? {}
+          : { responseBody: context.responseBody })
       });
     }
   };
